@@ -2,18 +2,12 @@
  * Copyright (c) 2024 Your Name
  * SPDX-License-Identifier: Apache-2.0
  */
-
-`default_nettype none
-
-module tt_kentrane_tinyspectrum (
-
-
 // Spectrum Analyzer with PWM Outputs for TinyTapeout
 // Top module designed to comply with TinyTapeout requirements
 
 `default_nettype none
 
-module tt_um_spectrum_analyzer (
+module tt_um_kentrane_spectrumanalyzer (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
