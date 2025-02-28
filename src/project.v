@@ -23,9 +23,9 @@ module tt_um_kentrane_tinyspectrum (
     assign uio_out = 8'b00000000;
 
     // Parameters - REDUCED VALUES to save area
-    parameter SAMPLE_RATE_DIV = 64;      // Smaller divider (power of 2 for efficiency)
-    parameter NUM_BANDS = 3;             // Reduced from 4 to 3 bands
-    parameter PWM_RESOLUTION = 6;        // Reduced from 8 to 6 bits
+    // Use power of 2 for SAMPLE_RATE_DIV to avoid width expansion warnings
+    parameter SAMPLE_RATE_DIV = 32;      // Smaller divider (power of 2 for efficiency)
+    parameter PWM_RESOLUTION = 5;        // Reduced from 6 to 5 bits
 
     // Internal signals
     wire audio_in;                       // Audio input signal
@@ -46,20 +46,22 @@ module tt_um_kentrane_tinyspectrum (
     assign uo_out[7:3] = 5'b00000;       // Unused outputs
 
     // Sample rate generator - Simplified to use a counter
-    reg [$clog2(SAMPLE_RATE_DIV)-1:0] sample_counter;
+    // Using fixed bit width that matches SAMPLE_RATE_DIV
+    reg [4:0] sample_counter;  // 5 bits for value up to 32
     reg sample_clk_reg;
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sample_counter <= 0;
-            sample_clk_reg <= 0;
+            sample_counter <= 5'b0;
+            sample_clk_reg <= 1'b0;
         end else begin
-            if (sample_counter == SAMPLE_RATE_DIV - 1) begin
-                sample_counter <= 0;
-                sample_clk_reg <= 1;
+            // Using a constant value to avoid width expansion warning
+            if (sample_counter == 5'd31) begin  // SAMPLE_RATE_DIV - 1
+                sample_counter <= 5'b0;
+                sample_clk_reg <= 1'b1;
             end else begin
-                sample_counter <= sample_counter + 1;
-                sample_clk_reg <= 0;
+                sample_counter <= sample_counter + 5'b1;
+                sample_clk_reg <= 1'b0;
             end
         end
     end
@@ -68,22 +70,22 @@ module tt_um_kentrane_tinyspectrum (
 
     // Audio input sampling - Inline implementation to save area
     reg [6:0] audio_accumulator;
-    reg [2:0] audio_sample_counter;
+    reg [1:0] audio_sample_counter;  // Reduced from 3 to 2 bits
     reg signed [7:0] audio_sample_reg;
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             audio_accumulator <= 7'd0;
-            audio_sample_counter <= 3'd0;
+            audio_sample_counter <= 2'd0;
             audio_sample_reg <= 8'd0;
         end else if (sample_clock) begin
             // Basic delta-sigma approach
             if (audio_in)
-                audio_accumulator <= audio_accumulator + 1;
+                audio_accumulator <= audio_accumulator + 7'd1;
             
-            audio_sample_counter <= audio_sample_counter + 1;
+            audio_sample_counter <= audio_sample_counter + 2'd1;
             
-            if (audio_sample_counter == 3'd7) begin
+            if (audio_sample_counter == 2'd3) begin  // Sample over 4 cycles instead of 8
                 audio_sample_reg <= {1'b0, audio_accumulator} - 8'd64;
                 audio_accumulator <= 7'd0;
             end
@@ -92,42 +94,42 @@ module tt_um_kentrane_tinyspectrum (
     
     assign audio_sample = audio_sample_reg;
 
-    // Filter bank - Three filters instead of four
+    // Filter bank - Three filters - with reduced bit widths
     // Low band filter (bass)
-    reg signed [11:0] filter_state0, filter_output0; // Reduced bit width
+    reg signed [10:0] filter_state0, filter_output0;  // Reduced from 12 to 11 bits
     reg [PWM_RESOLUTION-1:0] energy_accum0, band_energy_reg0;
     
     // Mid band filter 
-    reg signed [11:0] filter_state1, filter_output1;
+    reg signed [10:0] filter_state1, filter_output1;
     reg [PWM_RESOLUTION-1:0] energy_accum1, band_energy_reg1;
     
     // High band filter (treble)
-    reg signed [11:0] filter_state2, filter_output2;
+    reg signed [10:0] filter_state2, filter_output2;
     reg [PWM_RESOLUTION-1:0] energy_accum2, band_energy_reg2;
     
-    reg [2:0] energy_count;
+    reg [1:0] energy_count;  // Reduced from 3 to 2 bits
     
-    // Filter coefficients - Simplified to save area
-    parameter signed [7:0] COEFF_LOW_A = 8'sd24;     // Low freq ~20-200Hz
-    parameter signed [7:0] COEFF_LOW_B = 8'sd8;
+    // Filter coefficients - Simplified to powers of 2 where possible to save gates
+    parameter signed [7:0] COEFF_LOW_A = 8'sd16;     // Low freq ~20-200Hz (power of 2)
+    parameter signed [7:0] COEFF_LOW_B = 8'sd8;      // (power of 2)
     
-    parameter signed [7:0] COEFF_MID_A = 8'sd16;     // Mid freq ~200-2000Hz
-    parameter signed [7:0] COEFF_MID_B = 8'sd24;
+    parameter signed [7:0] COEFF_MID_A = 8'sd16;     // Mid freq ~200-2000Hz (power of 2)
+    parameter signed [7:0] COEFF_MID_B = 8'sd24;     // 16 + 8
     
-    parameter signed [7:0] COEFF_HIGH_A = 8'sd8;     // High freq ~2000-8000Hz
-    parameter signed [7:0] COEFF_HIGH_B = 8'sd32;
+    parameter signed [7:0] COEFF_HIGH_A = 8'sd8;     // High freq ~2000-8000Hz (power of 2)
+    parameter signed [7:0] COEFF_HIGH_B = 8'sd32;    // (power of 2)
     
     // Helper wires for absolute values - Simplified calculation
-    wire [5:0] abs_output0 = filter_output0[11] ? (~filter_output0[10:5] + 1'b1) : filter_output0[10:5];
-    wire [5:0] abs_output1 = filter_output1[11] ? (~filter_output1[10:5] + 1'b1) : filter_output1[10:5];
-    wire [5:0] abs_output2 = filter_output2[11] ? (~filter_output2[10:5] + 1'b1) : filter_output2[10:5];
+    wire [4:0] abs_output0 = filter_output0[10] ? (~filter_output0[9:5] + 1'b1) : filter_output0[9:5];
+    wire [4:0] abs_output1 = filter_output1[10] ? (~filter_output1[9:5] + 1'b1) : filter_output1[9:5];
+    wire [4:0] abs_output2 = filter_output2[10] ? (~filter_output2[9:5] + 1'b1) : filter_output2[9:5];
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             // Reset all registers
-            filter_state0 <= 12'd0; filter_output0 <= 12'd0;
-            filter_state1 <= 12'd0; filter_output1 <= 12'd0;
-            filter_state2 <= 12'd0; filter_output2 <= 12'd0;
+            filter_state0 <= 11'd0; filter_output0 <= 11'd0;
+            filter_state1 <= 11'd0; filter_output1 <= 11'd0;
+            filter_state2 <= 11'd0; filter_output2 <= 11'd0;
             
             energy_accum0 <= {PWM_RESOLUTION{1'b0}};
             energy_accum1 <= {PWM_RESOLUTION{1'b0}};
@@ -137,25 +139,28 @@ module tt_um_kentrane_tinyspectrum (
             band_energy_reg1 <= {PWM_RESOLUTION{1'b0}};
             band_energy_reg2 <= {PWM_RESOLUTION{1'b0}};
             
-            energy_count <= 3'd0;
+            energy_count <= 2'd0;
         end else if (sample_clock) begin
             // Apply different filters to each band
+            // Simplify calculations with shifts where possible for powers of 2
+            
             // Low band filter
             filter_state0 <= filter_state0 - 
-                          ((COEFF_LOW_A * filter_output0) >>> 8) + 
-                          ((COEFF_LOW_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
+                          (filter_output0 >>> 4) +     // Divide by 16 (COEFF_LOW_A)
+                          ({{3{audio_sample[7]}}, audio_sample} >>> 3); // Divide by 8 (COEFF_LOW_B)
             filter_output0 <= filter_state0;
             
             // Mid band filter
             filter_state1 <= filter_state1 - 
-                          ((COEFF_MID_A * filter_output1) >>> 8) + 
-                          ((COEFF_MID_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
+                          (filter_output1 >>> 4) +     // Divide by 16 (COEFF_MID_A)
+                          (({{3{audio_sample[7]}}, audio_sample} >>> 3) + 
+                           ({{3{audio_sample[7]}}, audio_sample} >>> 4)); // Approximates COEFF_MID_B
             filter_output1 <= filter_state1;
             
             // High band filter
             filter_state2 <= filter_state2 - 
-                          ((COEFF_HIGH_A * filter_output2) >>> 8) + 
-                          ((COEFF_HIGH_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
+                          (filter_output2 >>> 3) +     // Divide by 8 (COEFF_HIGH_A)
+                          ({{3{audio_sample[7]}}, audio_sample} >>> 2); // Divide by 4 (COEFF_HIGH_B/8)
             filter_output2 <= filter_state2;
             
             // Calculate energy (absolute value of filter output)
@@ -163,11 +168,11 @@ module tt_um_kentrane_tinyspectrum (
             energy_accum1 <= energy_accum1 + abs_output1;
             energy_accum2 <= energy_accum2 + abs_output2;
             
-            energy_count <= energy_count + 1;
+            energy_count <= energy_count + 2'd1;
             
-            // Update band energy outputs periodically - reduced sampling
-            if (energy_count == 3'd7) begin
-                // Apply some decay to the previous value for smoother visualization
+            // Update band energy outputs periodically - reduced from 8 to 4 cycles
+            if (energy_count == 2'd3) begin
+                // Simple decay for visualization
                 band_energy_reg0 <= (band_energy_reg0 >> 1) + (energy_accum0 >> 1);
                 band_energy_reg1 <= (band_energy_reg1 >> 1) + (energy_accum1 >> 1);
                 band_energy_reg2 <= (band_energy_reg2 >> 1) + (energy_accum2 >> 1);
@@ -176,7 +181,7 @@ module tt_um_kentrane_tinyspectrum (
                 energy_accum1 <= {PWM_RESOLUTION{1'b0}};
                 energy_accum2 <= {PWM_RESOLUTION{1'b0}};
                 
-                energy_count <= 3'd0;
+                energy_count <= 2'd0;
             end
         end
     end
@@ -185,7 +190,7 @@ module tt_um_kentrane_tinyspectrum (
     assign band_energy1 = band_energy_reg1;
     assign band_energy2 = band_energy_reg2;
 
-    // PWM Generator for each band - Simplified implementation
+    // PWM Generator for all bands - Minimalist shared counter
     reg [PWM_RESOLUTION-1:0] pwm_counter;
     
     always @(posedge clk or negedge rst_n) begin
@@ -196,7 +201,7 @@ module tt_um_kentrane_tinyspectrum (
         end
     end
     
-    // Generate PWM outputs by comparing counter with duty cycle
+    // Generate PWM outputs with simple comparators
     assign pwm_out0 = (pwm_counter < band_energy0);
     assign pwm_out1 = (pwm_counter < band_energy1);
     assign pwm_out2 = (pwm_counter < band_energy2);
