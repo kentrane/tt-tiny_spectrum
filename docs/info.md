@@ -9,12 +9,11 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-Explain how your project works
-
+It splits an incoming audio signal into different frequency bins and outputs it as PWM duty cycles to control some LEDs for example
 ## How to test
 
-Explain how to use your project
+You can test it by connecting LEDs to the outputs and an audio signal to the input
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+LEDs and audio input
