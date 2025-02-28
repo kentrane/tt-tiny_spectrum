@@ -13,7 +13,7 @@ module tt_um_kentrane_tinyspectrum (
     input  wire [7:0] uio_in,   // IOs: Input path
     output wire [7:0] uio_out,  // IOs: Output path
     output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
+    input  wire       ena,      // always 1 when the design is powered
     input  wire       clk,      // clock
     input  wire       rst_n     // reset_n - low to reset
 );
@@ -22,311 +22,188 @@ module tt_um_kentrane_tinyspectrum (
     assign uio_oe = 8'b00000000;
     assign uio_out = 8'b00000000;
 
-    // Parameters for the spectrum analyzer
-    parameter SAMPLE_RATE_DIV = 100;      // Divide clock to get sample rate
-    parameter NUM_BANDS = 4;              // Number of frequency bands
-    parameter PWM_RESOLUTION = 8;         // Resolution of PWM outputs
+    // Parameters - REDUCED VALUES to save area
+    parameter SAMPLE_RATE_DIV = 64;      // Smaller divider (power of 2 for efficiency)
+    parameter NUM_BANDS = 3;             // Reduced from 4 to 3 bands
+    parameter PWM_RESOLUTION = 6;        // Reduced from 8 to 6 bits
 
     // Internal signals
-    wire audio_in;               // Audio input signal
-    wire sample_clock;           // Sampling clock
-    wire signed [7:0] audio_sample; // Audio sample
-    
-    // Use individual wires for band energies
-    wire [PWM_RESOLUTION-1:0] band_energy0;
-    wire [PWM_RESOLUTION-1:0] band_energy1;
-    wire [PWM_RESOLUTION-1:0] band_energy2;
-    wire [PWM_RESOLUTION-1:0] band_energy3;
-    
-    // Individual PWM outputs
-    wire pwm_out0;
-    wire pwm_out1;
-    wire pwm_out2;
-    wire pwm_out3;
+    wire audio_in;                       // Audio input signal
+    wire sample_clock;                   // Sampling clock
+    wire signed [7:0] audio_sample;      // Audio sample
+
+    // Simplified band energies and PWM outputs
+    wire [PWM_RESOLUTION-1:0] band_energy0, band_energy1, band_energy2;
+    wire pwm_out0, pwm_out1, pwm_out2;
     
     // Input/output assignments
-    assign audio_in = ui_in[0];                   // Audio input on first input pin
+    assign audio_in = ui_in[0];          // Audio input on first input pin
     
     // Assign PWM outputs individually to output pins
-    assign uo_out[0] = pwm_out0;
-    assign uo_out[1] = pwm_out1;
-    assign uo_out[2] = pwm_out2;
-    assign uo_out[3] = pwm_out3;
-    assign uo_out[7:4] = 4'b0000;  // Unused outputs
+    assign uo_out[0] = pwm_out0;         // Low frequencies
+    assign uo_out[1] = pwm_out1;         // Mid frequencies
+    assign uo_out[2] = pwm_out2;         // High frequencies
+    assign uo_out[7:3] = 5'b00000;       // Unused outputs
 
-    // Sample rate generation
-    sample_rate_divider #(
-        .DIV(SAMPLE_RATE_DIV)
-    ) sample_divider (
-        .clk(clk),
-        .rst_n(rst_n),
-        .sample_clock(sample_clock)
-    );
-
-    // Audio input sampling
-    audio_sampler sampler (
-        .clk(clk),
-        .rst_n(rst_n),
-        .sample_clock(sample_clock),
-        .audio_in(audio_in),
-        .audio_sample(audio_sample)
-    );
-
-    // Filter bank for frequency analysis
-    filter_bank #(
-        .NUM_BANDS(NUM_BANDS),
-        .ENERGY_BITS(PWM_RESOLUTION)
-    ) filters (
-        .clk(clk),
-        .rst_n(rst_n),
-        .sample_clock(sample_clock),
-        .audio_sample(audio_sample),
-        .band_energy0(band_energy0),
-        .band_energy1(band_energy1),
-        .band_energy2(band_energy2),
-        .band_energy3(band_energy3)
-    );
-
-    // PWM generators for each band - one per frequency band
-    pwm_generator #(
-        .RESOLUTION(PWM_RESOLUTION)
-    ) pwm0 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .duty_cycle(band_energy0),
-        .pwm_out(pwm_out0)
-    );
-    
-    pwm_generator #(
-        .RESOLUTION(PWM_RESOLUTION)
-    ) pwm1 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .duty_cycle(band_energy1),
-        .pwm_out(pwm_out1)
-    );
-    
-    pwm_generator #(
-        .RESOLUTION(PWM_RESOLUTION)
-    ) pwm2 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .duty_cycle(band_energy2),
-        .pwm_out(pwm_out2)
-    );
-    
-    pwm_generator #(
-        .RESOLUTION(PWM_RESOLUTION)
-    ) pwm3 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .duty_cycle(band_energy3),
-        .pwm_out(pwm_out3)
-    );
-
-    // List all unused inputs to prevent warnings
-    wire _unused = &{ena, ui_in[7:1], uio_in, 1'b0};
-
-endmodule
-
-// Sample Rate Divider
-module sample_rate_divider #(
-    parameter DIV = 100  // Divider ratio
-)(
-    input wire clk,
-    input wire rst_n,
-    output reg sample_clock
-);
-    reg [$clog2(DIV)-1:0] counter;
+    // Sample rate generator - Simplified to use a counter
+    reg [$clog2(SAMPLE_RATE_DIV)-1:0] sample_counter;
+    reg sample_clk_reg;
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter <= 0;
-            sample_clock <= 0;
+            sample_counter <= 0;
+            sample_clk_reg <= 0;
         end else begin
-            if (counter == DIV - 1) begin
-                counter <= 0;
-                sample_clock <= 1;
+            if (sample_counter == SAMPLE_RATE_DIV - 1) begin
+                sample_counter <= 0;
+                sample_clk_reg <= 1;
             end else begin
-                counter <= counter + 1;
-                sample_clock <= 0;
+                sample_counter <= sample_counter + 1;
+                sample_clk_reg <= 0;
             end
         end
     end
-endmodule
+    
+    assign sample_clock = sample_clk_reg;
 
-// Audio Sampler
-module audio_sampler (
-    input wire clk,
-    input wire rst_n,
-    input wire sample_clock,
-    input wire audio_in,
-    output reg signed [7:0] audio_sample
-);
-    // Simple PDM to PCM conversion    
-    reg [7:0] accumulator;
-    reg [3:0] sample_counter;
+    // Audio input sampling - Inline implementation to save area
+    reg [6:0] audio_accumulator;
+    reg [2:0] audio_sample_counter;
+    reg signed [7:0] audio_sample_reg;
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            accumulator <= 8'd0;
-            sample_counter <= 4'd0;
-            audio_sample <= 8'd0;
+            audio_accumulator <= 7'd0;
+            audio_sample_counter <= 3'd0;
+            audio_sample_reg <= 8'd0;
         end else if (sample_clock) begin
-            // Basic sigma-delta approach
-            if (audio_in) 
-                accumulator <= accumulator + 1;
+            // Basic delta-sigma approach
+            if (audio_in)
+                audio_accumulator <= audio_accumulator + 1;
             
-            sample_counter <= sample_counter + 1;
+            audio_sample_counter <= audio_sample_counter + 1;
             
-            if (sample_counter == 4'd15) begin
-                audio_sample <= {1'b0, accumulator[7:1]} - 8'd64; // Convert to signed
-                accumulator <= 8'd0;
+            if (audio_sample_counter == 3'd7) begin
+                audio_sample_reg <= {1'b0, audio_accumulator} - 8'd64;
+                audio_accumulator <= 7'd0;
             end
         end
     end
-endmodule
+    
+    assign audio_sample = audio_sample_reg;
 
-// Filter Bank - Modified to use individual output ports instead of an array
-module filter_bank #(
-    parameter NUM_BANDS = 4,
-    parameter ENERGY_BITS = 8
-)(
-    input wire clk,
-    input wire rst_n,
-    input wire sample_clock,
-    input wire signed [7:0] audio_sample,
-    output reg [ENERGY_BITS-1:0] band_energy0,
-    output reg [ENERGY_BITS-1:0] band_energy1,
-    output reg [ENERGY_BITS-1:0] band_energy2,
-    output reg [ENERGY_BITS-1:0] band_energy3
-);
-    // Filter coefficients for different bands
-    // simplified IIR filter coefficients
-    parameter signed [7:0] COEFF_LOW_A = 8'sd20;    // ~20-200Hz
-    parameter signed [7:0] COEFF_LOW_B = 8'sd10;
+    // Filter bank - Three filters instead of four
+    // Low band filter (bass)
+    reg signed [11:0] filter_state0, filter_output0; // Reduced bit width
+    reg [PWM_RESOLUTION-1:0] energy_accum0, band_energy_reg0;
     
-    parameter signed [7:0] COEFF_MID_LOW_A = 8'sd15; // ~200-800Hz
-    parameter signed [7:0] COEFF_MID_LOW_B = 8'sd25;
+    // Mid band filter 
+    reg signed [11:0] filter_state1, filter_output1;
+    reg [PWM_RESOLUTION-1:0] energy_accum1, band_energy_reg1;
     
-    parameter signed [7:0] COEFF_MID_HIGH_A = 8'sd10; // ~800-2500Hz
-    parameter signed [7:0] COEFF_MID_HIGH_B = 8'sd30;
+    // High band filter (treble)
+    reg signed [11:0] filter_state2, filter_output2;
+    reg [PWM_RESOLUTION-1:0] energy_accum2, band_energy_reg2;
     
-    parameter signed [7:0] COEFF_HIGH_A = 8'sd5;    // ~2500-8000Hz
-    parameter signed [7:0] COEFF_HIGH_B = 8'sd40;
+    reg [2:0] energy_count;
     
-    // Individual filter states and outputs for each band
-    reg signed [15:0] filter_state0, filter_state1, filter_state2, filter_state3;
-    reg signed [15:0] filter_output0, filter_output1, filter_output2, filter_output3;
+    // Filter coefficients - Simplified to save area
+    parameter signed [7:0] COEFF_LOW_A = 8'sd24;     // Low freq ~20-200Hz
+    parameter signed [7:0] COEFF_LOW_B = 8'sd8;
     
-    // Individual energy accumulators for each band
-    reg [ENERGY_BITS-1:0] energy_accum0, energy_accum1, energy_accum2, energy_accum3;
-    reg [3:0] energy_count;
+    parameter signed [7:0] COEFF_MID_A = 8'sd16;     // Mid freq ~200-2000Hz
+    parameter signed [7:0] COEFF_MID_B = 8'sd24;
     
-    // Helper wires for absolute values
-    wire [7:0] abs_output0 = filter_output0[15] ? ~filter_output0[15:8] + 1'b1 : filter_output0[15:8];
-    wire [7:0] abs_output1 = filter_output1[15] ? ~filter_output1[15:8] + 1'b1 : filter_output1[15:8];
-    wire [7:0] abs_output2 = filter_output2[15] ? ~filter_output2[15:8] + 1'b1 : filter_output2[15:8];
-    wire [7:0] abs_output3 = filter_output3[15] ? ~filter_output3[15:8] + 1'b1 : filter_output3[15:8];
+    parameter signed [7:0] COEFF_HIGH_A = 8'sd8;     // High freq ~2000-8000Hz
+    parameter signed [7:0] COEFF_HIGH_B = 8'sd32;
+    
+    // Helper wires for absolute values - Simplified calculation
+    wire [5:0] abs_output0 = filter_output0[11] ? (~filter_output0[10:5] + 1'b1) : filter_output0[10:5];
+    wire [5:0] abs_output1 = filter_output1[11] ? (~filter_output1[10:5] + 1'b1) : filter_output1[10:5];
+    wire [5:0] abs_output2 = filter_output2[11] ? (~filter_output2[10:5] + 1'b1) : filter_output2[10:5];
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // Reset all states and accumulators
-            filter_state0 <= 16'd0;
-            filter_state1 <= 16'd0;
-            filter_state2 <= 16'd0;
-            filter_state3 <= 16'd0;
+            // Reset all registers
+            filter_state0 <= 12'd0; filter_output0 <= 12'd0;
+            filter_state1 <= 12'd0; filter_output1 <= 12'd0;
+            filter_state2 <= 12'd0; filter_output2 <= 12'd0;
             
-            filter_output0 <= 16'd0;
-            filter_output1 <= 16'd0;
-            filter_output2 <= 16'd0;
-            filter_output3 <= 16'd0;
+            energy_accum0 <= {PWM_RESOLUTION{1'b0}};
+            energy_accum1 <= {PWM_RESOLUTION{1'b0}};
+            energy_accum2 <= {PWM_RESOLUTION{1'b0}};
             
-            energy_accum0 <= {ENERGY_BITS{1'b0}};
-            energy_accum1 <= {ENERGY_BITS{1'b0}};
-            energy_accum2 <= {ENERGY_BITS{1'b0}};
-            energy_accum3 <= {ENERGY_BITS{1'b0}};
+            band_energy_reg0 <= {PWM_RESOLUTION{1'b0}};
+            band_energy_reg1 <= {PWM_RESOLUTION{1'b0}};
+            band_energy_reg2 <= {PWM_RESOLUTION{1'b0}};
             
-            band_energy0 <= {ENERGY_BITS{1'b0}};
-            band_energy1 <= {ENERGY_BITS{1'b0}};
-            band_energy2 <= {ENERGY_BITS{1'b0}};
-            band_energy3 <= {ENERGY_BITS{1'b0}};
-            
-            energy_count <= 4'd0;
+            energy_count <= 3'd0;
         end else if (sample_clock) begin
             // Apply different filters to each band
-            
             // Low band filter
             filter_state0 <= filter_state0 - 
-                           ((COEFF_LOW_A * filter_output0) >>> 8) + 
-                           ((COEFF_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+                          ((COEFF_LOW_A * filter_output0) >>> 8) + 
+                          ((COEFF_LOW_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
             filter_output0 <= filter_state0;
             
-            // Mid-low band filter
+            // Mid band filter
             filter_state1 <= filter_state1 - 
-                           ((COEFF_MID_LOW_A * filter_output1) >>> 8) + 
-                           ((COEFF_MID_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+                          ((COEFF_MID_A * filter_output1) >>> 8) + 
+                          ((COEFF_MID_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
             filter_output1 <= filter_state1;
             
-            // Mid-high band filter
-            filter_state2 <= filter_state2 - 
-                           ((COEFF_MID_HIGH_A * filter_output2) >>> 8) + 
-                           ((COEFF_MID_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_output2 <= filter_state2;
-            
             // High band filter
-            filter_state3 <= filter_state3 - 
-                           ((COEFF_HIGH_A * filter_output3) >>> 8) + 
-                           ((COEFF_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_output3 <= filter_state3;
+            filter_state2 <= filter_state2 - 
+                          ((COEFF_HIGH_A * filter_output2) >>> 8) + 
+                          ((COEFF_HIGH_B * {{4{audio_sample[7]}}, audio_sample}) >>> 8);
+            filter_output2 <= filter_state2;
             
             // Calculate energy (absolute value of filter output)
             energy_accum0 <= energy_accum0 + abs_output0;
             energy_accum1 <= energy_accum1 + abs_output1;
             energy_accum2 <= energy_accum2 + abs_output2;
-            energy_accum3 <= energy_accum3 + abs_output3;
             
             energy_count <= energy_count + 1;
             
-            // Update band energy outputs periodically
-            if (energy_count == 4'd15) begin
+            // Update band energy outputs periodically - reduced sampling
+            if (energy_count == 3'd7) begin
                 // Apply some decay to the previous value for smoother visualization
-                band_energy0 <= (band_energy0 >> 1) + (energy_accum0 >> 1);
-                band_energy1 <= (band_energy1 >> 1) + (energy_accum1 >> 1);
-                band_energy2 <= (band_energy2 >> 1) + (energy_accum2 >> 1);
-                band_energy3 <= (band_energy3 >> 1) + (energy_accum3 >> 1);
+                band_energy_reg0 <= (band_energy_reg0 >> 1) + (energy_accum0 >> 1);
+                band_energy_reg1 <= (band_energy_reg1 >> 1) + (energy_accum1 >> 1);
+                band_energy_reg2 <= (band_energy_reg2 >> 1) + (energy_accum2 >> 1);
                 
-                energy_accum0 <= {ENERGY_BITS{1'b0}};
-                energy_accum1 <= {ENERGY_BITS{1'b0}};
-                energy_accum2 <= {ENERGY_BITS{1'b0}};
-                energy_accum3 <= {ENERGY_BITS{1'b0}};
+                energy_accum0 <= {PWM_RESOLUTION{1'b0}};
+                energy_accum1 <= {PWM_RESOLUTION{1'b0}};
+                energy_accum2 <= {PWM_RESOLUTION{1'b0}};
                 
-                energy_count <= 4'd0;
+                energy_count <= 3'd0;
             end
         end
     end
-endmodule
+    
+    assign band_energy0 = band_energy_reg0;
+    assign band_energy1 = band_energy_reg1;
+    assign band_energy2 = band_energy_reg2;
 
-// PWM Generator
-module pwm_generator #(
-    parameter RESOLUTION = 8
-)(
-    input wire clk,
-    input wire rst_n,
-    input wire [RESOLUTION-1:0] duty_cycle,
-    output reg pwm_out
-);
-    reg [RESOLUTION-1:0] counter;
+    // PWM Generator for each band - Simplified implementation
+    reg [PWM_RESOLUTION-1:0] pwm_counter;
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter <= {RESOLUTION{1'b0}};
-            pwm_out <= 1'b0;
+            pwm_counter <= {PWM_RESOLUTION{1'b0}};
         end else begin
-            counter <= counter + 1'b1;
-            pwm_out <= (counter < duty_cycle);
+            pwm_counter <= pwm_counter + 1'b1;
         end
     end
+    
+    // Generate PWM outputs by comparing counter with duty cycle
+    assign pwm_out0 = (pwm_counter < band_energy0);
+    assign pwm_out1 = (pwm_counter < band_energy1);
+    assign pwm_out2 = (pwm_counter < band_energy2);
+
+    // List all unused inputs to prevent warnings
+    wire _unused = &{ena, ui_in[7:1], uio_in, 1'b0};
+
 endmodule
 
 `default_nettype wire
