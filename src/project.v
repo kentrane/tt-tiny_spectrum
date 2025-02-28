@@ -16,15 +16,8 @@ module tt_um_kentrane_tinyspectrum (
     input  wire       ena,      // always 1 when the design is powered, so you can ignore it
     input  wire       clk,      // clock
     input  wire       rst_n     // reset_n - low to reset
-    );
+);
     
-    // All output pins must be assigned. If not used, assign to 0.
-    assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-    assign uio_out = 0;
-    assign uio_oe  = 0;
-    
-    // List all unused inputs to prevent warnings
-    wire _unused = &{ena, clk, rst_n, 1'b0};
     // Set all bidirectional pins as inputs initially
     assign uio_oe = 8'b00000000;
     assign uio_out = 8'b00000000;
@@ -37,17 +30,30 @@ module tt_um_kentrane_tinyspectrum (
     // Internal signals
     wire audio_in;               // Audio input signal
     wire sample_clock;           // Sampling clock
-    wire signed [7:0] audio_sample;      // Audio sample
-    wire [PWM_RESOLUTION-1:0] band_energy [NUM_BANDS-1:0];  // Energy in each band
-    wire [NUM_BANDS-1:0] pwm_out;         // PWM outputs
+    wire signed [7:0] audio_sample; // Audio sample
+    
+    // Use individual wires for band energies
+    wire [PWM_RESOLUTION-1:0] band_energy0;
+    wire [PWM_RESOLUTION-1:0] band_energy1;
+    wire [PWM_RESOLUTION-1:0] band_energy2;
+    wire [PWM_RESOLUTION-1:0] band_energy3;
+    
+    // Individual PWM outputs
+    wire pwm_out0;
+    wire pwm_out1;
+    wire pwm_out2;
+    wire pwm_out3;
     
     // Input/output assignments
     assign audio_in = ui_in[0];                   // Audio input on first input pin
+    
+    // Assign PWM outputs individually to output pins
     assign uo_out[0] = pwm_out0;
     assign uo_out[1] = pwm_out1;
     assign uo_out[2] = pwm_out2;
     assign uo_out[3] = pwm_out3;
     assign uo_out[7:4] = 4'b0000;  // Unused outputs
+
     // Sample rate generation
     sample_rate_divider #(
         .DIV(SAMPLE_RATE_DIV)
@@ -81,20 +87,45 @@ module tt_um_kentrane_tinyspectrum (
         .band_energy3(band_energy3)
     );
 
-    // PWM generators for each band
-    genvar i;
-    generate
-        for (i = 0; i < NUM_BANDS; i = i + 1) begin : pwm_gen
-            pwm_generator #(
-                .RESOLUTION(PWM_RESOLUTION)
-            ) pwm (
-                .clk(clk),
-                .rst_n(rst_n),
-                .duty_cycle(band_energy[i]),
-                .pwm_out(pwm_out[i])
-            );
-        end
-    endgenerate
+    // PWM generators for each band - one per frequency band
+    pwm_generator #(
+        .RESOLUTION(PWM_RESOLUTION)
+    ) pwm0 (
+        .clk(clk),
+        .rst_n(rst_n),
+        .duty_cycle(band_energy0),
+        .pwm_out(pwm_out0)
+    );
+    
+    pwm_generator #(
+        .RESOLUTION(PWM_RESOLUTION)
+    ) pwm1 (
+        .clk(clk),
+        .rst_n(rst_n),
+        .duty_cycle(band_energy1),
+        .pwm_out(pwm_out1)
+    );
+    
+    pwm_generator #(
+        .RESOLUTION(PWM_RESOLUTION)
+    ) pwm2 (
+        .clk(clk),
+        .rst_n(rst_n),
+        .duty_cycle(band_energy2),
+        .pwm_out(pwm_out2)
+    );
+    
+    pwm_generator #(
+        .RESOLUTION(PWM_RESOLUTION)
+    ) pwm3 (
+        .clk(clk),
+        .rst_n(rst_n),
+        .duty_cycle(band_energy3),
+        .pwm_out(pwm_out3)
+    );
+
+    // List all unused inputs to prevent warnings
+    wire _unused = &{ena, ui_in[7:1], uio_in, 1'b0};
 
 endmodule
 
@@ -156,7 +187,7 @@ module audio_sampler (
     end
 endmodule
 
-// Filter Bank
+// Filter Bank - Modified to use individual output ports instead of an array
 module filter_bank #(
     parameter NUM_BANDS = 4,
     parameter ENERGY_BITS = 8
@@ -297,3 +328,5 @@ module pwm_generator #(
         end
     end
 endmodule
+
+`default_nettype wire
