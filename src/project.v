@@ -43,9 +43,11 @@ module tt_um_kentrane_tinyspectrum (
     
     // Input/output assignments
     assign audio_in = ui_in[0];                   // Audio input on first input pin
-    assign uo_out[NUM_BANDS-1:0] = pwm_out;       // PWM outputs
-    assign uo_out[7:NUM_BANDS] = {(8-NUM_BANDS){1'b0}}; // Unused outputs
-
+    assign uo_out[0] = pwm_out0;
+    assign uo_out[1] = pwm_out1;
+    assign uo_out[2] = pwm_out2;
+    assign uo_out[3] = pwm_out3;
+    assign uo_out[7:4] = 4'b0000;  // Unused outputs
     // Sample rate generation
     sample_rate_divider #(
         .DIV(SAMPLE_RATE_DIV)
@@ -73,7 +75,10 @@ module tt_um_kentrane_tinyspectrum (
         .rst_n(rst_n),
         .sample_clock(sample_clock),
         .audio_sample(audio_sample),
-        .band_energy(band_energy)
+        .band_energy0(band_energy0),
+        .band_energy1(band_energy1),
+        .band_energy2(band_energy2),
+        .band_energy3(band_energy3)
     );
 
     // PWM generators for each band
