@@ -159,7 +159,10 @@ module filter_bank #(
     input wire rst_n,
     input wire sample_clock,
     input wire signed [7:0] audio_sample,
-    output reg [ENERGY_BITS-1:0] band_energy [NUM_BANDS-1:0]
+    output reg [ENERGY_BITS-1:0] band_energy0,
+    output reg [ENERGY_BITS-1:0] band_energy1,
+    output reg [ENERGY_BITS-1:0] band_energy2,
+    output reg [ENERGY_BITS-1:0] band_energy3
 );
     // Filter coefficients for different bands
     // simplified IIR filter coefficients
@@ -175,65 +178,92 @@ module filter_bank #(
     parameter signed [7:0] COEFF_HIGH_A = 8'sd5;    // ~2500-8000Hz
     parameter signed [7:0] COEFF_HIGH_B = 8'sd40;
     
-    reg signed [15:0] filter_states [NUM_BANDS-1:0];
-    reg signed [15:0] filter_outputs [NUM_BANDS-1:0];
-    reg [ENERGY_BITS-1:0] energy_accum [NUM_BANDS-1:0];
+    // Individual filter states and outputs for each band
+    reg signed [15:0] filter_state0, filter_state1, filter_state2, filter_state3;
+    reg signed [15:0] filter_output0, filter_output1, filter_output2, filter_output3;
+    
+    // Individual energy accumulators for each band
+    reg [ENERGY_BITS-1:0] energy_accum0, energy_accum1, energy_accum2, energy_accum3;
     reg [3:0] energy_count;
+    
+    // Helper wires for absolute values
+    wire [7:0] abs_output0 = filter_output0[15] ? ~filter_output0[15:8] + 1'b1 : filter_output0[15:8];
+    wire [7:0] abs_output1 = filter_output1[15] ? ~filter_output1[15:8] + 1'b1 : filter_output1[15:8];
+    wire [7:0] abs_output2 = filter_output2[15] ? ~filter_output2[15:8] + 1'b1 : filter_output2[15:8];
+    wire [7:0] abs_output3 = filter_output3[15] ? ~filter_output3[15:8] + 1'b1 : filter_output3[15:8];
     
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            integer i;
-            for (i = 0; i < NUM_BANDS; i = i + 1) begin
-                filter_states[i] <= 16'd0;
-                filter_outputs[i] <= 16'd0;
-                energy_accum[i] <= {ENERGY_BITS{1'b0}};
-                band_energy[i] <= {ENERGY_BITS{1'b0}};
-            end
+            // Reset all states and accumulators
+            filter_state0 <= 16'd0;
+            filter_state1 <= 16'd0;
+            filter_state2 <= 16'd0;
+            filter_state3 <= 16'd0;
+            
+            filter_output0 <= 16'd0;
+            filter_output1 <= 16'd0;
+            filter_output2 <= 16'd0;
+            filter_output3 <= 16'd0;
+            
+            energy_accum0 <= {ENERGY_BITS{1'b0}};
+            energy_accum1 <= {ENERGY_BITS{1'b0}};
+            energy_accum2 <= {ENERGY_BITS{1'b0}};
+            energy_accum3 <= {ENERGY_BITS{1'b0}};
+            
+            band_energy0 <= {ENERGY_BITS{1'b0}};
+            band_energy1 <= {ENERGY_BITS{1'b0}};
+            band_energy2 <= {ENERGY_BITS{1'b0}};
+            band_energy3 <= {ENERGY_BITS{1'b0}};
+            
             energy_count <= 4'd0;
         end else if (sample_clock) begin
             // Apply different filters to each band
             
             // Low band filter
-            filter_states[0] <= filter_states[0] - 
-                              ((COEFF_LOW_A * filter_outputs[0]) >>> 8) + 
-                              ((COEFF_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_outputs[0] <= filter_states[0];
+            filter_state0 <= filter_state0 - 
+                           ((COEFF_LOW_A * filter_output0) >>> 8) + 
+                           ((COEFF_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+            filter_output0 <= filter_state0;
             
             // Mid-low band filter
-            filter_states[1] <= filter_states[1] - 
-                              ((COEFF_MID_LOW_A * filter_outputs[1]) >>> 8) + 
-                              ((COEFF_MID_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_outputs[1] <= filter_states[1];
+            filter_state1 <= filter_state1 - 
+                           ((COEFF_MID_LOW_A * filter_output1) >>> 8) + 
+                           ((COEFF_MID_LOW_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+            filter_output1 <= filter_state1;
             
             // Mid-high band filter
-            filter_states[2] <= filter_states[2] - 
-                              ((COEFF_MID_HIGH_A * filter_outputs[2]) >>> 8) + 
-                              ((COEFF_MID_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_outputs[2] <= filter_states[2];
+            filter_state2 <= filter_state2 - 
+                           ((COEFF_MID_HIGH_A * filter_output2) >>> 8) + 
+                           ((COEFF_MID_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+            filter_output2 <= filter_state2;
             
             // High band filter
-            filter_states[3] <= filter_states[3] - 
-                              ((COEFF_HIGH_A * filter_outputs[3]) >>> 8) + 
-                              ((COEFF_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
-            filter_outputs[3] <= filter_states[3];
+            filter_state3 <= filter_state3 - 
+                           ((COEFF_HIGH_A * filter_output3) >>> 8) + 
+                           ((COEFF_HIGH_B * {{8{audio_sample[7]}}, audio_sample}) >>> 8);
+            filter_output3 <= filter_state3;
             
             // Calculate energy (absolute value of filter output)
-            integer j;
-            for (j = 0; j < NUM_BANDS; j = j + 1) begin
-                energy_accum[j] <= energy_accum[j] + 
-                                  (filter_outputs[j][15] ? ~filter_outputs[j][15:8] + 1'b1 : filter_outputs[j][15:8]);
-            end
+            energy_accum0 <= energy_accum0 + abs_output0;
+            energy_accum1 <= energy_accum1 + abs_output1;
+            energy_accum2 <= energy_accum2 + abs_output2;
+            energy_accum3 <= energy_accum3 + abs_output3;
             
             energy_count <= energy_count + 1;
             
             // Update band energy outputs periodically
             if (energy_count == 4'd15) begin
-                integer k;
-                for (k = 0; k < NUM_BANDS; k = k + 1) begin
-                    // Apply some decay to the previous value for smoother visualization
-                    band_energy[k] <= (band_energy[k] >> 1) + (energy_accum[k] >> 1);
-                    energy_accum[k] <= {ENERGY_BITS{1'b0}};
-                end
+                // Apply some decay to the previous value for smoother visualization
+                band_energy0 <= (band_energy0 >> 1) + (energy_accum0 >> 1);
+                band_energy1 <= (band_energy1 >> 1) + (energy_accum1 >> 1);
+                band_energy2 <= (band_energy2 >> 1) + (energy_accum2 >> 1);
+                band_energy3 <= (band_energy3 >> 1) + (energy_accum3 >> 1);
+                
+                energy_accum0 <= {ENERGY_BITS{1'b0}};
+                energy_accum1 <= {ENERGY_BITS{1'b0}};
+                energy_accum2 <= {ENERGY_BITS{1'b0}};
+                energy_accum3 <= {ENERGY_BITS{1'b0}};
+                
                 energy_count <= 4'd0;
             end
         end
