@@ -37,6 +37,7 @@ module tt_um_kentrane_tinyspectrum (
     // Internal signals
     wire audio_in;               // Audio input signal
     wire sample_clock;           // Sampling clock
+    wire signed [7:0] audio_sample;      // Audio sample
     wire [PWM_RESOLUTION-1:0] band_energy [NUM_BANDS-1:0];  // Energy in each band
     wire [NUM_BANDS-1:0] pwm_out;         // PWM outputs
     
