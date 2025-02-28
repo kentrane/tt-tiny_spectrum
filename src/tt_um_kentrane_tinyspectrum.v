@@ -261,5 +261,3 @@ module pwm_generator #(
         end
     end
 endmodule
-
-`default_nettype wire
