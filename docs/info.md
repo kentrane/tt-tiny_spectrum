@@ -10,7 +10,7 @@ You can also include images in this folder and reference them in the markdown. E
 ## How it works
 This project implements a digital musical tone generator using frequency division techniques common in FPGA/ASIC design. The implementation:
 
-- Utilizes a 16-bit counter-based frequency divider to generate precise musical frequencies
+- Utilizes a 20-bit counter-based frequency divider to generate precise musical frequencies
 - Supports 16 predefined musical notes via 4-bit selection input
 - Provides 4 octave ranges controlled by a 2-bit selector
 - Implements basic amplitude modulation (tremolo effect)
@@ -36,6 +36,6 @@ The primary output appears on uo_out[0] as a square wave at the selected frequen
 ## External hardware
 
 - RC low-pass filter (1kΩ resistor + 0.1µF capacitor) for audio to not be square
-- DC blocking capacitor (1-10µF) for speaker protection
+- DC blocking capacitor for speaker protection
 - Speaker/headphones
 - Speaker or headphone driver circuit if you want
