@@ -28,7 +28,7 @@ module tb ();
 `endif
 
   // Instantiate the musical tone generator module:
-  tt_um_kentrane_tinymusical user_project (
+  tt_um_kentrane_tinyspectrum user_project (
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
       .VPWR(VPWR),
