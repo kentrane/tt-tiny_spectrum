@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Your Name
+ * Copyright (c) 2024 Kenneth Petersen
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,15 +7,17 @@
 /*
  * Musical Tone Generator for TinyTapeout
  *
- * This design generates musical tones based on input selections.
- * - 4 input pins for note selection (16 possible notes)
- * - 2 input pins for octave selection (4 possible octaves)
- * - 1 input pin for enable/disable
- * - 1 input pin for tremolo effect
+ * This chip turns digital inputs into sweet, sweet music!
+ *
+ * Controls:
+ * - Note selector [3:0] - 16 notes from C to D# (your musical palette)
+ * - Octave jumper [5:4] - 4 octaves (from deep bass to chirpy highs)
+ * - Sound ON/OFF  [6]   - Silence is golden... sometimes
+ * - Tremolo       [7]   - For that classic wobble effect
  * 
  * Outputs:
- * - Primary audio output on output[0]
- * - Visual note indicators on output[1:7]
+ * - Main audio on pin 7 - Connect to speaker and rock out!
+ * - Visual light show on pins [0:6] - 7-segment display shows which note is playing
  */
 
 `default_nettype none
@@ -34,22 +36,21 @@ module tt_um_kentrane_tinyspectrum (
     assign uio_oe = 8'b00000000;
     assign uio_out = 8'b00000000;
 
-    // Input assignments
-    wire [3:0] note_select = ui_in[3:0];    // 16 possible notes (0-15)
-    wire [1:0] octave_select = ui_in[5:4];  // 4 possible octaves
-    wire enable = ui_in[6];                 // Enable/disable tone
-    wire tremolo_enable = ui_in[7];         // Enable tremolo effect
+    // Decoding the musical intentions of the user
+    wire [3:0] note_select = ui_in[3:0];    // Pick your note (16 options)
+    wire [1:0] octave_select = ui_in[5:4];  // Choose your octave (4 options)
+    wire enable = ui_in[6];                 // The master switch
+    wire tremolo_enable = ui_in[7];         // Add that classic vibrato effect
     
     // Internal registers
-    reg [19:0] counter = 0;         // Counter for frequency division
-    reg [7:0] tremolo_counter = 0;  // Counter for tremolo effect
-    reg tone_out = 0;               // Output tone state
+    reg [19:0] counter = 0;         // Frequency timer (the metronome)
+    reg [7:0] tremolo_counter = 0;  // Creates that wavering tremolo effect
+    reg tone_out = 0;               // The actual sound wave (square wave)
     
-    // Frequency divider values for notes (based on C4 = 261.63 Hz)
-    // Values calculated for a 10 MHz clock (100 ns period)
+    // Musical note frequency dividers - translated for our 10 MHz clock
+    // Each value represents "how many clock ticks before toggling the output"
     wire [19:0] base_dividers [0:15];
     
-    // C, C#, D, D#, E, F, F#, G, G#, A, A#, B and a few more notes
     assign base_dividers[0]  = 20'd19121; // C  (261.63 Hz)
     assign base_dividers[1]  = 20'd18039; // C# (277.18 Hz)
     assign base_dividers[2]  = 20'd17026; // D  (293.66 Hz)
@@ -67,72 +68,68 @@ module tt_um_kentrane_tinyspectrum (
     assign base_dividers[14] = 20'd8513;  // D5 (587.33 Hz)
     assign base_dividers[15] = 20'd8035;  // D#5 (622.25 Hz)
     
-    // Select base frequency divider based on note_select
     wire [19:0] selected_base_divider;
     assign selected_base_divider = base_dividers[note_select];
-    
-    // Apply octave scaling (divide frequency by 2^octave_select)
+    // We shift bits right to double the frequency (octave up)
     wire [19:0] freq_divider;
-    assign freq_divider = (octave_select == 2'b00) ? selected_base_divider :
-                     (octave_select == 2'b01) ? selected_base_divider >> 1 :  // Octave higher
-                     (octave_select == 2'b10) ? selected_base_divider >> 2 :  // Two octaves higher
-                     (octave_select == 2'b11) ? selected_base_divider >> 3 :  // Three octaves higher
-                                              selected_base_divider;        // Fallback
-    // Tremolo effect (amplitude modulation)
+    assign freq_divider =   (octave_select == 2'b00) ? selected_base_divider :
+                            (octave_select == 2'b01) ? selected_base_divider >> 1 : // One giant leap up
+                            (octave_select == 2'b10) ? selected_base_divider >> 2 : // Reaching the high notes
+                            (octave_select == 2'b11) ? selected_base_divider >> 3 : // Soprano territory
+                            selected_base_divider;                                  // Safety net
+    // Tremolo - that wavering effect in old sci-fi movies
     wire tremolo_active;
     assign tremolo_active = tremolo_enable ? tremolo_counter[7] : 1'b1;
     
-    // Tone generation logic
+    // The sound generation engine - the heart of the chip
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            counter <= 20'd0;
-            tremolo_counter <= 8'd0;
-            tone_out <= 1'b0;
+            counter <= 20'd0; // Reset the metronome
+            tremolo_counter <= 8'd0; // Reset the tremolo
+            tone_out <= 1'b0; //  Reset the sound
         end else if (ena && enable) begin
-            // Tremolo counter
-            tremolo_counter <= tremolo_counter + 1'b1;
+            // Tremolo effect counter (creates amplitude waves)
+            tremolo_counter <= tremolo_counter + 1'b1; // Count up by one
             
-            // Tone generation counter
-            if (counter >= freq_divider - 1) begin
-                counter <= 20'd0;
-                tone_out <= ~tone_out;  // Toggle output
+            // Sound wave generation - toggles output when counter hits target
+            if (counter >= freq_divider - 1) begin 
+                counter <= 20'd0;       // Reset the metronome
+                tone_out <= ~tone_out;  // Flip the bit, make the sound
             end else begin
-                counter <= counter + 1'b1;
+                counter <= counter + 1'b1;  // Keep counting
             end
         end else begin
-            // If not enabled, reset output
-            tone_out <= 1'b0;
+            tone_out <= 1'b0; // be quiet
         end
     end
     
-    // LED display logic - light up LEDs based on the note playing
-    // This creates a visual indication of which note is playing
-    reg [6:0] note_display;
+    // Display which note is playing on the 7-segment
+    reg [6:0] segment_pattern;
     always @* begin
         case (note_select)
-            4'd0:  note_display = 7'b0000001;  // C
-            4'd1:  note_display = 7'b0000010;  // C#
-            4'd2:  note_display = 7'b0000100;  // D
-            4'd3:  note_display = 7'b0001000;  // D#
-            4'd4:  note_display = 7'b0010000;  // E
-            4'd5:  note_display = 7'b0100000;  // F
-            4'd6:  note_display = 7'b1000000;  // F#
-            4'd7:  note_display = 7'b0000011;  // G
-            4'd8:  note_display = 7'b0000110;  // G#
-            4'd9:  note_display = 7'b0001100;  // A
-            4'd10: note_display = 7'b0011000;  // A#
-            4'd11: note_display = 7'b0110000;  // B
-            4'd12: note_display = 7'b1100000;  // C5
-            4'd13: note_display = 7'b0000111;  // C#5
-            4'd14: note_display = 7'b0001110;  // D5
-            4'd15: note_display = 7'b0011100;  // D#5
-            default: note_display = 7'b0000000;
+            4'd0:  segment_pattern = 7'b0111111; // 0
+            4'd1:  segment_pattern = 7'b0000110; // 1
+            4'd2:  segment_pattern = 7'b1011011; // 2
+            4'd3:  segment_pattern = 7'b1001111; // 3
+            4'd4:  segment_pattern = 7'b1100110; // 4
+            4'd5:  segment_pattern = 7'b1101101; // 5
+            4'd6:  segment_pattern = 7'b1111101; // 6
+            4'd7:  segment_pattern = 7'b0000111; // 7
+            4'd8:  segment_pattern = 7'b1111111; // 8
+            4'd9:  segment_pattern = 7'b1101111; // 9
+            4'd10: segment_pattern = 7'b1110111; // A
+            4'd11: segment_pattern = 7'b1111100; // b
+            4'd12: segment_pattern = 7'b0111001; // C
+            4'd13: segment_pattern = 7'b1011110; // d
+            4'd14: segment_pattern = 7'b1111001; // E
+            4'd15: segment_pattern = 7'b1110001; // F
+            default: segment_pattern = 7'b0000000; // All segments off
         endcase
     end
     
-    // Output assignments
-    assign uo_out[0] = enable ? (tone_out & tremolo_active) : 1'b0;  // Audio output with tremolo
-    //assign uo_out[0] = enable ? (tone_out) : 1'b1;  // Audio output with tremolo
-    assign uo_out[7:1] = note_display;  // Visual indicator LEDs
+    // Connecting everything up
+    assign uo_out[7] = enable ? (tone_out & tremolo_active) : 1'b0;  // The main audio signal
+    // Visual lightshow on the 7-segment
+    assign uo_out[6:0] = enable ? segment_pattern : 7'b0000000;
     
 endmodule

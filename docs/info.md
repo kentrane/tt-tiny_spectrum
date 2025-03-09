@@ -1,5 +1,4 @@
 <!---
-
 This file is used to generate your project datasheet. Please fill in the information below and delete any unused
 sections.
 
@@ -8,34 +7,41 @@ You can also include images in this folder and reference them in the markdown. E
 -->
 
 ## How it works
-This project implements a digital musical tone generator using frequency division techniques common in FPGA/ASIC design. The implementation:
 
-- Utilizes a 20-bit counter-based frequency divider to generate precise musical frequencies
-- Supports 16 predefined musical notes via 4-bit selection input
-- Provides 4 octave ranges controlled by a 2-bit selector
-- Implements basic amplitude modulation (tremolo effect)
-- Includes visual feedback via 7 LED outputs showing current note selection
+This digital tone generator turns binary inputs into musical notes through the ancient art of frequency division:
 
-The core functionality is implemented as a synchronous state machine that toggles the output when a frequency-specific counter reaches its terminal count value.
+- 20-bit counter that ticks away until it's time to toggle a square wave
+- 16 musical notes to choose from
+- 4 octaves, because sometimes you want to annoy dogs, sometimes submarines
+- Tremolo effect for when regular beeping isn't dramatic enough
+- 7-segment LED display that dances along, pretending to be a visualizer
+
+Really it's just a binary counter that gets impatient at musically-appropriate intervals.
+Seemed simple enought since time sort of ran out from this project.
 
 ## How to test
-1. **Note selection**: Configure ui_in[3:0] to select from 16 predefined notes (0=C, 9=A/440Hz, etc.)
 
-2. **Octave selection**: Set ui_in[5:4] to select the octave range:
-   - 00: Base frequencies
-   - 01: One octave higher (2x frequency)
-   - 10: Two octaves higher (4x frequency) 
-   - 11: One octave lower (0.5x frequency)
+1. **Note selection**: Set ui_in[3:0] to pick your poison:
+   - 0 = C
+   - 9 = A/440Hz
+   - The others are somewhere in between
 
-3. **Enable control**: Set ui_in[6] to 1 to enable tone generation
+2. **Octave selection**: ui_in[5:4] lets you choose your pitch range:
+   - 00: Standard frequencies (for normal people)
+   - 01: One octave higher (for annoying people)
+   - 10: Two octaves higher (for annoying pets)
+   - 11: Three octaves higher (for annoying bats)
 
-4. **Modulation control**: Set ui_in[7] to 1 to enable tremolo effect
+3. **Master switch**: ui_in[6] = 1 turns it on. Set to 0 for silence.
 
-The primary output appears on uo_out[0] as a square wave at the selected frequency, while uo_out[7:1] provides visual indication of the current note.
+4. **Tremolo**: ui_in[7] = 1 adds cool effects.
+
+The main square wave output comes out from uo_out[7], while uo_out[6:0] provides visual confirmation that yes, you are indeed making noise, while also letting you know which kind. Solder jumpers to all pins except the DP since that one is the audio (uo_out[7])
+I think it should be able to control the inputs from the Pi Pico, and maybe I could make a small keyboard for attaching also to control it. 
 
 ## External hardware
-
-- RC low-pass filter (1kΩ resistor + 0.1µF capacitor) for audio to not be square
-- DC blocking capacitor for speaker protection
-- Speaker/headphones
-- Speaker or headphone driver circuit if you want
+you'll need:
+- RC low-pass filter (probably 1kΩ + 0.1µF will do)
+- DC blocking capacitor (unless playing AC/DC)
+- Speaker or headphones
+- Audio amplifier (optional)
