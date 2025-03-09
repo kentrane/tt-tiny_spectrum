@@ -74,10 +74,10 @@ module tt_um_kentrane_tinyspectrum (
     // Apply octave scaling (divide frequency by 2^octave_select)
     wire [19:0] freq_divider;
     assign freq_divider = (octave_select == 2'b00) ? selected_base_divider :
-                         (octave_select == 2'b01) ? selected_base_divider >> 1 :  // Octave higher
-                         (octave_select == 2'b10) ? selected_base_divider >> 2 :  // Two octaves higher
-                                                  selected_base_divider << 1;   // Octave lower
-    
+                     (octave_select == 2'b01) ? selected_base_divider >> 1 :  // Octave higher
+                     (octave_select == 2'b10) ? selected_base_divider >> 2 :  // Two octaves higher
+                     (octave_select == 2'b11) ? selected_base_divider >> 3 :  // Three octaves higher
+                                              selected_base_divider;        // Fallback
     // Tremolo effect (amplitude modulation)
     wire tremolo_active;
     assign tremolo_active = tremolo_enable ? tremolo_counter[7] : 1'b1;
@@ -132,6 +132,7 @@ module tt_um_kentrane_tinyspectrum (
     
     // Output assignments
     assign uo_out[0] = enable ? (tone_out & tremolo_active) : 1'b0;  // Audio output with tremolo
+    //assign uo_out[0] = enable ? (tone_out) : 1'b1;  // Audio output with tremolo
     assign uo_out[7:1] = note_display;  // Visual indicator LEDs
     
 endmodule

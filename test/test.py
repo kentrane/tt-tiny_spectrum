@@ -4,10 +4,10 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer, ClockCycles
 
 @cocotb.test()
 async def test_musical_tone_generator(dut):
-    """Test Musical Tone Generator functionality"""
+    """Test Musical Tone Generator very basic functionality"""
     
     # Start the clock
-    clock = Clock(dut.clk, 10, units="ns")  # 100 MHz for faster simulation
+    clock = Clock(dut.clk, 100, units="ns")  # 10 MHz
     cocotb.start_soon(clock.start())
     
     # Reset the design
@@ -63,7 +63,7 @@ async def test_all_notes(dut):
     """Test all 16 notes with basic enable"""
     
     # Start the clock
-    clock = Clock(dut.clk, 10, units="ns")  # 100 MHz
+    clock = Clock(dut.clk, 100, units="ns")  # 10 MHz
     cocotb.start_soon(clock.start())
     
     # Reset and initialize
@@ -79,18 +79,21 @@ async def test_all_notes(dut):
         dut.ui_in.value = (1 << 6) | note
         
         # Wait for a consistent state
-        await ClockCycles(dut.clk, 20)
+        await ClockCycles(dut.clk, 1000)
         
         # Log results
         dut._log.info(f"Note {note}: LED pattern = 0b{(dut.uo_out.value.integer >> 1) & 0x7F:07b}")
         
+        # For lower notes (0-7), sample for longer periods
+        sample_interval = 500 if note < 8 else 100
         # Record some output samples for waveform analysis
         samples = []
-        for _ in range(100):
+        for _ in range(200):
             samples.append(dut.uo_out.value.integer & 0x1)
-            await ClockCycles(dut.clk, 10)
+            await ClockCycles(dut.clk, sample_interval)
         
         # Check that the output is toggling (simple activity check)
+        dut._log.info(f"Note {note}: Min={min(samples)}, Max={max(samples)}")
         assert min(samples) != max(samples), f"Note {note} should produce toggling output"
 
 @cocotb.test()
@@ -98,11 +101,11 @@ async def test_octave_scaling(dut):
     """Test that octaves properly scale the frequency"""
     
     # Setup clock and reset
-    clock = Clock(dut.clk, 10, units="ns")
+    clock = Clock(dut.clk, 100, units="ns")
     cocotb.start_soon(clock.start())
     dut.rst_n.value = 0
     dut.ena.value = 1
-    await ClockCycles(dut.clk, 10)
+    await ClockCycles(dut.clk, 100)
     dut.rst_n.value = 1
     
     note = 0  # Test with C note
@@ -114,7 +117,7 @@ async def test_octave_scaling(dut):
         dut.ui_in.value = (1 << 6) | (octave << 4) | note
         
         # Wait to stabilize
-        await ClockCycles(dut.clk, 50)
+        await ClockCycles(dut.clk, 500)
         
         # Measure the period by counting clocks between transitions
         last_value = dut.uo_out.value.integer & 0x1
@@ -151,11 +154,11 @@ async def test_tremolo_effect(dut):
     """Test that tremolo effect modulates the output"""
     
     # Setup
-    clock = Clock(dut.clk, 10, units="ns")
+    clock = Clock(dut.clk, 100, units="ns")
     cocotb.start_soon(clock.start())
     dut.rst_n.value = 0
     dut.ena.value = 1
-    await ClockCycles(dut.clk, 10)
+    await ClockCycles(dut.clk, 100)
     dut.rst_n.value = 1
     
     # Enable note C with tremolo
@@ -165,7 +168,7 @@ async def test_tremolo_effect(dut):
     samples = []
     for _ in range(1000):
         samples.append(dut.uo_out.value.integer & 0x1)
-        await ClockCycles(dut.clk, 10)
+        await ClockCycles(dut.clk, 100)
     
     # Check for periods of silence (tremolo causing output to go low)
     has_low = 0 in samples
@@ -184,7 +187,7 @@ async def test_reset_behavior(dut):
     """Test that reset properly initializes the module"""
     
     # Setup
-    clock = Clock(dut.clk, 10, units="ns")
+    clock = Clock(dut.clk, 100, units="ns")
     cocotb.start_soon(clock.start())
     
     # Start with design enabled and playing a note
@@ -193,24 +196,24 @@ async def test_reset_behavior(dut):
     dut.ui_in.value = 0x40  # Enable + note C
     
     # Let it run for a while
-    await ClockCycles(dut.clk, 100)
+    await ClockCycles(dut.clk, 1000)
     
     # Assert reset
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 5)
+    await ClockCycles(dut.clk, 50)
     
     # Check outputs are properly reset
     assert (dut.uo_out.value.integer & 0x1) == 0, "Audio output should be 0 after reset"
     
     # Release reset
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 5)
+    await ClockCycles(dut.clk, 50)
     
     # Check that module recovers and starts generating tone
     samples = []
     for _ in range(200):
         samples.append(dut.uo_out.value.integer & 0x1)
-        await ClockCycles(dut.clk, 10)
+        await ClockCycles(dut.clk, 100)
     
     has_transition = False
     for i in range(1, len(samples)):
@@ -219,3 +222,47 @@ async def test_reset_behavior(dut):
             break
     
     assert has_transition, "Module should resume tone generation after reset is released"
+@cocotb.test()
+async def test_note_frequency(dut):
+    """Measure tone frequency for each note"""
+    
+    clock = Clock(dut.clk, 100, units="ns")  # 10 MHz
+    cocotb.start_soon(clock.start())
+    
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 10)
+    dut.rst_n.value = 1
+    dut.ena.value = 1
+    
+    # Test a few notes
+    for note in [0, 4, 9, 15]:  # C, E, A, D#5
+        # Enable note
+        dut.ui_in.value = (1 << 6) | note
+        await ClockCycles(dut.clk, 1000)  # Let it stabilize
+        
+        # Measure pulse width
+        last_value = dut.uo_out.value.integer & 0x1
+        transitions = 0
+        cycles = 0
+        period_cycles = 0
+        
+        # Run until we detect 4 transitions or timeout
+        while transitions < 4 and cycles < 100000:
+            await ClockCycles(dut.clk, 1)
+            cycles += 1
+            current_value = dut.uo_out.value.integer & 0x1
+            
+            if current_value != last_value:
+                transitions += 1
+                if transitions == 2:  # Start counting at second transition
+                    period_cycles = 0
+                if transitions == 4:  # End at fourth transition (full period)
+                    break
+            
+            if transitions >= 2:  # Count cycles during one full period
+                period_cycles += 1
+                
+            last_value = current_value
+            
+        freq_hz = 10000000 / period_cycles if period_cycles > 0 else 0
+        dut._log.info(f"Note {note}: Period = {period_cycles} cycles, Freq ≈ {freq_hz:.2f} Hz")
